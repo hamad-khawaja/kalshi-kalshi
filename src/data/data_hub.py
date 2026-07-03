@@ -161,41 +161,23 @@ class DataHub:
         yes_levels: list[OrderbookLevel] = []
         no_levels: list[OrderbookLevel] = []
 
-        # Prefer dollar format, fall back to cents
-        for entry in payload.get("yes_dollars") or []:
+        # Kalshi sends fixed-point contract counts as "*_dollars_fp"
+        for entry in payload.get("yes_dollars_fp") or []:
             if isinstance(entry, list) and len(entry) >= 2:
                 yes_levels.append(
                     OrderbookLevel(
                         price_dollars=Decimal(str(entry[0])),
-                        quantity=int(entry[1]),
+                        quantity=int(Decimal(str(entry[1]))),
                     )
                 )
-        for entry in payload.get("no_dollars") or []:
+        for entry in payload.get("no_dollars_fp") or []:
             if isinstance(entry, list) and len(entry) >= 2:
                 no_levels.append(
                     OrderbookLevel(
                         price_dollars=Decimal(str(entry[0])),
-                        quantity=int(entry[1]),
+                        quantity=int(Decimal(str(entry[1]))),
                     )
                 )
-
-        if not yes_levels and not no_levels:
-            for entry in payload.get("yes") or []:
-                if isinstance(entry, list) and len(entry) >= 2:
-                    yes_levels.append(
-                        OrderbookLevel(
-                            price_dollars=Decimal(str(entry[0])) / 100,
-                            quantity=int(entry[1]),
-                        )
-                    )
-            for entry in payload.get("no") or []:
-                if isinstance(entry, list) and len(entry) >= 2:
-                    no_levels.append(
-                        OrderbookLevel(
-                            price_dollars=Decimal(str(entry[0])) / 100,
-                            quantity=int(entry[1]),
-                        )
-                    )
 
         self._orderbook_cache[ticker] = Orderbook(
             ticker=ticker,
@@ -217,16 +199,13 @@ class DataHub:
             return  # No snapshot yet — can't apply delta
 
         side = payload.get("side")  # "yes" or "no"
-        delta = payload.get("delta", 0)
+        delta_raw = payload.get("delta_fp", 0)
+        delta = int(Decimal(str(delta_raw)))
 
-        # Parse price — prefer dollars, fall back to cents
         price_str = payload.get("price_dollars")
-        if price_str is not None:
-            price = Decimal(str(price_str))
-        elif payload.get("price") is not None:
-            price = Decimal(str(payload["price"])) / 100
-        else:
+        if price_str is None:
             return
+        price = Decimal(str(price_str))
 
         levels = cached.yes_levels if side == "yes" else cached.no_levels
 
